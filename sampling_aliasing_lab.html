@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Experiment 3 — Sampling, Aliasing &amp; Reconstruction</title>
+<style>
+  :root{
+    --bg:#0B1016;
+    --panel:#121923;
+    --panel-2:#0F1620;
+    --scope:#080D12;
+    --line:#22303C;
+    --text:#DCE3EA;
+    --text-dim:#7C8A99;
+    --amber:#F2A65A;
+    --cyan:#5FD8CE;
+    --violet:#C58CF2;
+    --red:#F26D6D;
+    --green:#8FD16B;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, "Roboto Mono", monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:var(--sans);}
+  body{padding:18px 14px 60px;}
+  .wrap{max-width:720px;margin:0 auto;}
+
+  /* ---- nameplate header ---- */
+  .nameplate{
+    background:linear-gradient(180deg,#161F2A,#101720);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:16px 18px;
+    position:relative;
+    overflow:hidden;
+  }
+  .nameplate::before{
+    content:"";
+    position:absolute; inset:0;
+    background:repeating-linear-gradient(180deg, rgba(95,216,206,0.035) 0px, rgba(95,216,206,0.035) 1px, transparent 1px, transparent 3px);
+    pointer-events:none;
+  }
+  .kicker{
+    font-family:var(--mono); font-size:11px; letter-spacing:0.06em;
+    color:var(--cyan); margin:0 0 6px;
+  }
+  h1{font-size:20px; line-height:1.3; margin:0 0 4px; font-weight:650; letter-spacing:-0.01em;}
+  .sub{color:var(--text-dim); font-size:13.5px; line-height:1.5; margin:0;}
+
+  .ledrow{display:flex; gap:10px; flex-wrap:wrap; margin-top:14px;}
+  .led{
+    font-family:var(--mono); font-size:12px; color:var(--text-dim);
+    background:var(--scope); border:1px solid var(--line); border-radius:6px;
+    padding:6px 10px; display:flex; align-items:center; gap:7px;
+  }
+  .led b{color:var(--text); font-weight:600;}
+  .dot{width:7px;height:7px;border-radius:50%; flex:none;}
+
+  section{margin-top:16px;}
+  .card{
+    background:var(--panel); border:1px solid var(--line); border-radius:10px;
+    padding:16px;
+  }
+  .card h2{font-size:13px; text-transform:uppercase; letter-spacing:0.07em; color:var(--text-dim); margin:0 0 12px; font-weight:650;}
+  .card h2 span{color:var(--text); text-transform:none; letter-spacing:normal; font-size:14px;}
+
+  /* ---- regime switch ---- */
+  .switch{display:flex; gap:8px; margin-bottom:12px;}
+  .switch button{
+    flex:1; font-family:var(--mono); font-size:12px; padding:10px 6px;
+    background:var(--scope); color:var(--text-dim); border:1px solid var(--line);
+    border-radius:7px; cursor:pointer; transition:border-color .15s, color .15s, background .15s;
+    text-align:center;
+  }
+  .switch button b{display:block; font-size:13px; color:inherit; font-weight:700; margin-bottom:2px;}
+  .switch button.on{
+    border-color:var(--cyan); color:var(--cyan); background:rgba(95,216,206,0.08);
+  }
+  .slidebox{display:flex; align-items:center; gap:10px; margin-bottom:4px;}
+  .slidebox input[type=range]{flex:1; accent-color:var(--cyan);}
+  .slidebox .val{font-family:var(--mono); font-size:13px; min-width:78px; text-align:right; color:var(--amber);}
+  .hint{font-size:11.5px; color:var(--text-dim); margin-top:6px;}
+
+  .predict{
+    border-left:3px solid var(--amber);
+    background:rgba(242,166,90,0.06);
+    padding:10px 12px; border-radius:0 6px 6px 0;
+    font-size:13px; line-height:1.55; color:#E7D4B8;
+  }
+  .observe{
+    border-left:3px solid var(--green);
+    background:rgba(143,209,107,0.06);
+    padding:10px 12px; border-radius:0 6px 6px 0;
+    font-size:13px; line-height:1.55; color:#D6E7CB; margin-top:10px;
+  }
+  .label-tag{font-family:var(--mono); font-size:10.5px; letter-spacing:0.06em; color:inherit; opacity:0.75; display:block; margin-bottom:4px;}
+
+  canvas{width:100%; display:block; background:var(--scope); border-radius:6px;}
+  .plotcap{font-size:11.5px; color:var(--text-dim); margin-top:8px; line-height:1.5;}
+
+  .legend{display:flex; flex-wrap:wrap; gap:12px; margin:14px 0 4px; font-size:12px; color:var(--text-dim);}
+  .legend span{display:inline-flex; align-items:center; gap:6px;}
+  .swatch{width:14px; height:3px; border-radius:2px; display:inline-block;}
+  .swatch.dot2{width:8px;height:8px;border-radius:50%;}
+
+  .readout{
+    font-family:var(--mono); background:var(--scope); border:1px solid var(--line);
+    border-radius:7px; padding:10px 12px; font-size:22px; color:var(--amber);
+    letter-spacing:0.02em; text-shadow:0 0 10px rgba(242,166,90,0.25);
+  }
+  .readout small{display:block; font-family:var(--sans); font-size:10.5px; color:var(--text-dim); letter-spacing:0.05em; margin-bottom:3px;}
+
+  .calc{
+    font-family:var(--mono); font-size:12.5px; line-height:1.85; color:var(--text);
+    background:var(--scope); border:1px solid var(--line); border-radius:7px;
+    padding:12px 14px; overflow-x:auto; white-space:pre;
+  }
+  .calc .ok{color:var(--green);}
+  .calc .warn{color:var(--red);}
+  .calc .lbl{color:var(--text-dim);}
+
+  .valbox{border:1px solid #4A3B22; background:rgba(242,166,90,0.05); border-radius:10px; padding:16px;}
+  .valbox h2{color:var(--amber);}
+
+  footer{margin-top:22px; font-size:11.5px; color:var(--text-dim); line-height:1.6; text-align:center;}
+  footer p{margin:4px 0;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="nameplate">
+    <p class="kicker">EXPT-03 · SIGNAL ANALYSIS BENCH</p>
+    <h1>Sampling, Aliasing &amp; Reconstruction</h1>
+    <p class="sub">Two-tone signal x(t) = sin(2π·f₁·t) + 0.5·sin(2π·f₂·t), sampled at a chosen fs, restored by sinc interpolation, and checked against a hand-calculated alias frequency.</p>
+    <div class="ledrow">
+      <div class="led"><span class="dot" style="background:var(--cyan)"></span>f₁ = <b>50 Hz</b></div>
+      <div class="led"><span class="dot" style="background:var(--cyan)"></span>f₂ = <b>120 Hz</b></div>
+      <div class="led"><span class="dot" style="background:var(--text-dim)"></span>f_max = <b>120 Hz</b></div>
+      <div class="led"><span class="dot" style="background:var(--amber)"></span>2·f_max (Nyquist rate) = <b>240 Hz</b></div>
+    </div>
+  </div>
+
+  <section class="card">
+    <h2>Sampling rate — <span id="regimeLabel">above Nyquist</span></h2>
+    <div class="switch">
+      <button data-fs="500">ABOVE<b>500 Hz</b></button>
+      <button data-fs="240">AT<b>240 Hz</b></button>
+      <button data-fs="150">BELOW<b>150 Hz</b></button>
+    </div>
+    <div class="slidebox">
+      <input type="range" id="fsSlider" min="40" max="600" step="1" value="500">
+      <span class="val" id="fsVal">500 Hz</span>
+    </div>
+    <p class="hint">Drag for any fs between 40–600 Hz; the three buttons jump to the required test points (above / equal to / below 2·f_max).</p>
+
+    <div class="predict" style="margin-top:14px;">
+      <span class="label-tag">expected effect — written before running</span>
+      <span id="expectedText"></span>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Ch.1 — <span>Reference vs. sampled signal</span></h2>
+    <canvas id="cvTime" height="190"></canvas>
+    <div class="legend">
+      <span><i class="swatch" style="background:var(--cyan)"></i>continuous reference</span>
+      <span><i class="swatch dot2" style="background:var(--amber)"></i>physical samples (rate = fs)</span>
+    </div>
+    <p class="plotcap">The reference curve is evaluated on a fixed 600-point plotting grid used only for drawing a smooth line — it is <em>not</em> the sampling process. The amber stems are the actual instants the ADC would take at the chosen fs; only these are used below for reconstruction and spectra.</p>
+  </section>
+
+  <section class="card">
+    <h2>Ch.2 — <span>Sinc-reconstructed waveform</span></h2>
+    <canvas id="cvRecon" height="190"></canvas>
+    <div class="legend">
+      <span><i class="swatch" style="background:var(--cyan)"></i>reference</span>
+      <span><i class="swatch" style="background:var(--violet)"></i>reconstructed (Σ y[n]·sinc(fs(t−n/fs)))</span>
+    </div>
+    <p class="plotcap">Reconstruction sums sinc kernels over samples taken from a slightly wider guard window than shown, so edge truncation doesn't masquerade as reconstruction error inside the displayed 60 ms.</p>
+  </section>
+
+  <section class="card">
+    <h2>Ch.3 — <span>Magnitude spectrum</span></h2>
+    <canvas id="cvSpec" height="190"></canvas>
+    <div class="legend">
+      <span><i class="swatch" style="background:var(--amber)"></i>|X(f)| of the sampled sequence</span>
+      <span><i class="swatch" style="background:var(--text-dim)"></i>f₁, f₂ (true)</span>
+      <span><i class="swatch" style="background:var(--red)"></i>fs/2 (this case's Nyquist limit)</span>
+    </div>
+    <p class="plotcap">Frequency axis is fixed 0–260 Hz in every case so the three regimes are directly comparable. Spectrum content only exists up to fs/2 — where that cutoff falls, and what shows up below it, is the whole story.</p>
+  </section>
+
+  <section class="card">
+    <h2>Ch.4 — <span>Reconstruction error</span></h2>
+    <canvas id="cvErr" height="150"></canvas>
+    <div class="legend">
+      <span><i class="swatch" style="background:var(--red)"></i>reconstructed − reference</span>
+    </div>
+    <div style="margin-top:12px;">
+      <div class="readout"><small>RMS ERROR (window shown, ref. peak ≈ 1.5)</small><span id="rmseVal">0.0000</span></div>
+    </div>
+    <div class="observe">
+      <span class="label-tag">observed result — after running</span>
+      <span id="observedText"></span>
+    </div>
+  </section>
+
+  <section class="card valbox">
+    <h2>Mandatory validation — manual alias frequency</h2>
+    <p class="hint" style="margin-top:-4px;">Independent hand calculation using f_alias = |f − round(f/fs)·fs|, cross-checked against the peak actually measured in Ch.3.</p>
+    <div class="calc" id="calcBox"></div>
+  </section>
+
+  <footer>
+    <p>Physical sampling rate (fs, sets the amber sample instants and everything derived from them) is kept separate in the code from plotting resolution (the fixed 600-point / 1 s grids used only to draw smooth curves and estimate the spectrum) — changing plotting resolution redraws the same physics, changing fs changes it.</p>
+  </footer>
+
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var F1 = 50, F2 = 120, FMAX = 120, NYQ = 240;
+  var T_WIN = 0.06;            // display window, seconds (= exactly 3 periods of f1)
+  var GUARD_PERIODS = 8;       // extra sample periods on each side, for reconstruction context only
+  var DENSE_N = 600;           // plotting-resolution grid, independent of fs
+  var SPEC_T = 1.0;            // duration used for spectral estimate, independent of T_WIN
+
+  function x(t){ return Math.sin(2*Math.PI*F1*t) + 0.5*Math.sin(2*Math.PI*F2*t); }
+  function sinc(v){ if (Math.abs(v) < 1e-9) return 1; var p = Math.PI*v; return Math.sin(p)/p; }
+  function aliasCalc(f, fs){ var k = Math.round(f/fs); return { k: k, alias: Math.abs(f - k*fs) }; }
+
+  function computeAll(fs){
+    var guard = GUARD_PERIODS/fs;
+    var nStart = Math.ceil(-guard*fs);
+    var nEnd   = Math.floor((T_WIN+guard)*fs);
+    var sampT = [], sampY = [];
+    for (var n=nStart; n<=nEnd; n++){ var t=n/fs; sampT.push(t); sampY.push(x(t)); }
+
+    var visT=[], visY=[];
+    for (var i=0;i<sampT.length;i++){
+      if (sampT[i] >= -1e-9 && sampT[i] <= T_WIN+1e-9){ visT.push(sampT[i]); visY.push(sampY[i]); }
+    }
+
+    var denseT=[], refY=[], reconY=[];
+    for (var d=0; d<=DENSE_N; d++){
+      var t2 = T_WIN*d/DENSE_N;
+      denseT.push(t2); refY.push(x(t2));
+      var acc=0;
+      for (var k2=0;k2<sampT.length;k2++){ acc += sampY[k2]*sinc(fs*(t2-sampT[k2])); }
+      reconY.push(acc);
+    }
+    var errY = reconY.map(function(v,idx){ return v - refY[idx]; });
+    var se=0; for (var e=0;e<errY.length;e++){ se += errY[e]*errY[e]; }
+    var rmse = Math.sqrt(se/errY.length);
+
+    var Nspec = Math.max(4, Math.round(fs*SPEC_T));
+    var specY = [];
+    for (var ns=0; ns<Nspec; ns++){ specY.push(x(ns/fs)); }
+    var fMax = fs/2;
+    var fStep = Math.max(0.5, fMax/300);
+    var freqs=[], mags=[];
+    for (var f=0; f<=fMax+1e-9; f+=fStep){
+      var re=0, im=0;
+      for (var ns2=0; ns2<Nspec; ns2++){
+        var ang = 2*Math.PI*f*(ns2/fs);
+        re += specY[ns2]*Math.cos(ang);
+        im -= specY[ns2]*Math.sin(ang);
+      }
+      freqs.push(f);
+      mags.push(Math.sqrt(re*re+im*im)/(Nspec/2));
+    }
+
+    function peakNear(target, win){
+      var bestF=null, bestM=-1;
+      for (var i2=0;i2<freqs.length;i2++){
+        if (Math.abs(freqs[i2]-target) <= win){ if (mags[i2] > bestM){ bestM = mags[i2]; bestF = freqs[i2]; } }
+      }
+      return { f:bestF, m:bestM };
+    }
+    var win = Math.max(3, fStep*3);
+    var a1 = aliasCalc(F1, fs), a2 = aliasCalc(F2, fs);
+    var peak1 = peakNear(a1.alias, win), peak2 = peakNear(a2.alias, win);
+
+    return { fs:fs, denseT:denseT, refY:refY, reconY:reconY, errY:errY, rmse:rmse,
+             visT:visT, visY:visY, freqs:freqs, mags:mags, fMax:fMax, a1:a1, a2:a2, peak1:peak1, peak2:peak2 };
+  }
+
+  // ---------- generic canvas plotter ----------
+  function drawPlot(canvas, cfg){
+    var dpr = window.devicePixelRatio || 1;
+    var w = canvas.clientWidth, h = canvas.clientHeight;
+    if (w < 10) return;
+    canvas.width = Math.round(w*dpr); canvas.height = Math.round(h*dpr);
+    var ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    ctx.clearRect(0,0,w,h);
+
+    var padL=42, padR=10, padT=10, padB=26;
+    var pw = w-padL-padR, ph = h-padT-padB;
+    var xmin=cfg.xDomain[0], xmax=cfg.xDomain[1];
+    var ymin, ymax;
+    if (cfg.yDomain){ ymin=cfg.yDomain[0]; ymax=cfg.yDomain[1]; }
+    else {
+      ymin=Infinity; ymax=-Infinity;
+      cfg.series.forEach(function(s){ s.y.forEach(function(v){ if (v<ymin) ymin=v; if (v>ymax) ymax=v; }); });
+      if (!isFinite(ymin)){ ymin=-1; ymax=1; }
+      var pad = (ymax-ymin)*0.15 || 0.1; ymin-=pad; ymax+=pad;
+    }
+    function X(v){ return padL + (v-xmin)/(xmax-xmin)*pw; }
+    function Y(v){ return padT + (1-(v-ymin)/(ymax-ymin))*ph; }
+
+    ctx.fillStyle = '#080D12';
+    ctx.fillRect(padL, padT, pw, ph);
+
+    ctx.font = '10px ui-monospace, monospace';
+    ctx.strokeStyle = 'rgba(95,216,206,0.09)';
+    ctx.fillStyle = '#5B6B7A';
+    ctx.lineWidth = 1;
+    var nx=6, ny=4;
+    for (var i=0;i<=nx;i++){
+      var gx = padL + pw*i/nx;
+      ctx.beginPath(); ctx.moveTo(gx,padT); ctx.lineTo(gx,padT+ph); ctx.stroke();
+      var xv = xmin + (xmax-xmin)*i/nx;
+      ctx.textAlign='center';
+      ctx.fillText(cfg.xTickFormat ? cfg.xTickFormat(xv) : xv.toFixed(2), gx, padT+ph+16);
+    }
+    for (var j=0;j<=ny;j++){
+      var gy = padT + ph*j/ny;
+      ctx.beginPath(); ctx.moveTo(padL,gy); ctx.lineTo(padL+pw,gy); ctx.stroke();
+      var yv = ymax - (ymax-ymin)*j/ny;
+      ctx.textAlign='right';
+      ctx.fillText(yv.toFixed(2), padL-6, gy+3);
+    }
+
+    if (cfg.hzero && ymin<0 && ymax>0){
+      ctx.strokeStyle = 'rgba(220,227,234,0.22)';
+      ctx.beginPath(); ctx.moveTo(padL,Y(0)); ctx.lineTo(padL+pw,Y(0)); ctx.stroke();
+    }
+
+    (cfg.vlines||[]).forEach(function(v){
+      if (v.x<xmin || v.x>xmax) return;
+      ctx.strokeStyle = v.color; ctx.lineWidth=1.3; ctx.setLineDash(v.dash||[4,3]);
+      ctx.beginPath(); ctx.moveTo(X(v.x),padT); ctx.lineTo(X(v.x),padT+ph); ctx.stroke();
+      ctx.setLineDash([]);
+      if (v.label){
+        ctx.fillStyle=v.color; ctx.font='9.5px ui-monospace, monospace'; ctx.textAlign='left';
+        var lx = Math.min(X(v.x)+4, padL+pw-2);
+        ctx.fillText(v.label, lx, padT+11);
+      }
+    });
+
+    cfg.series.forEach(function(s){
+      if (s.type === 'stems'){
+        ctx.strokeStyle = s.color; ctx.fillStyle = s.color; ctx.lineWidth = 1.6;
+        for (var i2=0;i2<s.x.length;i2++){
+          var px=X(s.x[i2]), py=Y(s.y[i2]), pz=Y(0);
+          ctx.beginPath(); ctx.moveTo(px,pz); ctx.lineTo(px,py); ctx.stroke();
+          ctx.beginPath(); ctx.arc(px,py,2.6,0,Math.PI*2); ctx.fill();
+        }
+      } else if (s.type === 'area'){
+        ctx.beginPath();
+        ctx.moveTo(X(s.x[0]), Y(0));
+        for (var i3=0;i3<s.x.length;i3++){ ctx.lineTo(X(s.x[i3]),Y(s.y[i3])); }
+        ctx.lineTo(X(s.x[s.x.length-1]), Y(0));
+        ctx.closePath();
+        ctx.fillStyle = s.color; ctx.fill();
+      } else {
+        ctx.strokeStyle = s.color; ctx.lineWidth = s.width || 1.7;
+        ctx.beginPath();
+        for (var i4=0;i4<s.x.length;i4++){
+          var px2=X(s.x[i4]), py2=Y(s.y[i4]);
+          if (i4===0) ctx.moveTo(px2,py2); else ctx.lineTo(px2,py2);
+        }
+        ctx.stroke();
+      }
+    });
+
+    ctx.strokeStyle = 'rgba(95,216,206,0.22)'; ctx.lineWidth = 1;
+    ctx.strokeRect(padL+0.5, padT+0.5, pw-1, ph-1);
+  }
+
+  // ---------- DOM ----------
+  var cvTime = document.getElementById('cvTime');
+  var cvRecon = document.getElementById('cvRecon');
+  var cvSpec = document.getElementById('cvSpec');
+  var cvErr = document.getElementById('cvErr');
+  var fsSlider = document.getElementById('fsSlider');
+  var fsVal = document.getElementById('fsVal');
+  var regimeLabel = document.getElementById('regimeLabel');
+  var expectedText = document.getElementById('expectedText');
+  var observedText = document.getElementById('observedText');
+  var rmseVal = document.getElementById('rmseVal');
+  var calcBox = document.getElementById('calcBox');
+  var buttons = Array.prototype.slice.call(document.querySelectorAll('.switch button'));
+
+  function regimeOf(fs){ return fs>240 ? 'above' : (fs===240 ? 'at' : 'below'); }
+
+  function expectedFor(fs){
+    var r = regimeOf(fs);
+    if (r === 'above') return 'fs = '+fs+' Hz is above 2·f_max = 240 Hz, so the sampling theorem is satisfied with margin. Both tones should sample without folding, and sinc interpolation should reconstruct the waveform closely, leaving only small residual error.';
+    if (r === 'at') return 'fs = 240 Hz sits exactly at 2·f_max. The theorem\'s strict inequality (fs > 2·f_max) is not met, so this is a boundary case: depending on the phase of the 120 Hz tone relative to the sample instants, it may be captured, attenuated, or — in the worst case — sampled only at its own zero crossings and vanish entirely.';
+    return 'fs = '+fs+' Hz is below 2·f_max = 240 Hz, so the 120 Hz tone should violate the theorem and fold down (alias) into the band below fs/2. The 50 Hz tone, being under fs/2, should stay unaliased. The reconstructed waveform should visibly diverge from the true two-tone signal.';
+  }
+
+  function observedFor(res){
+    var r = regimeOf(res.fs);
+    var s = 'Measured RMS error ≈ '+res.rmse.toFixed(4)+' (reference peak ≈ 1.5). ';
+    if (r === 'above'){
+      s += res.rmse < 0.05
+        ? 'Agrees with theory — the error stays small and is consistent with fs comfortably above the Nyquist rate; the residue you see is sinc-window truncation, not aliasing.'
+        : 'Error is larger than the "safely above Nyquist" case usually gives — worth diagnosing with the spectrum (Ch.3) to check for an unexpected second source of error.';
+    } else if (r === 'at'){
+      s += 'The spectrum in Ch.3 should show only the 50 Hz tone: at t = n/240 s, sin(2π·120·t) = sin(πn) = 0 for every integer n, so the 120 Hz tone is exactly zero at every sample — not attenuated, simply absent from the record. That matches the predicted boundary-case failure rather than contradicting it.';
+    } else {
+      var pf = (res.peak2.f===null) ? '—' : res.peak2.f.toFixed(1);
+      var agree = (res.peak2.f!==null && Math.abs(res.peak2.f-res.a2.alias) < Math.max(2, res.freqs[1]));
+      s += 'Manual calculation (below) predicts the 120 Hz tone folds to '+res.a2.alias.toFixed(1)+' Hz; the nearest measured spectral peak sits at '+pf+' Hz. ';
+      s += agree ? 'The two agree — this confirms the folding formula against the independently computed spectrum, the diagnostic test used here.'
+                 : 'These disagree by more than one frequency bin — re-check the DFT frequency step and window length as the likely cause before trusting the peak location.';
+    }
+    return s;
+  }
+
+  function calcLine(name, f, fs, a){
+    var status = (a.k===0)
+      ? '→ f_alias = '+a.alias.toFixed(1)+' Hz  (k=0, unaliased, '+(a.alias < fs/2 ? 'below' : 'ABOVE')+' fs/2 = '+(fs/2).toFixed(1)+' Hz)'
+      : '→ f_alias = '+a.alias.toFixed(1)+' Hz  (k='+a.k+', FOLDED — exceeds fs/2 = '+(fs/2).toFixed(1)+' Hz)';
+    return name+' = '+f+' Hz:  k = round('+f+'/'+fs+') = round('+(f/fs).toFixed(3)+') = '+a.k+'\n'+
+           '           f_alias = |'+f+' \u2212 '+a.k+'\u00D7'+fs+'| = '+a.alias.toFixed(1)+' Hz\n'+
+           '           '+status;
+  }
+
+  function render(fs){
+    fs = Math.round(fs);
+    var res = computeAll(fs);
+    var r = regimeOf(fs);
+
+    fsSlider.value = fs;
+    fsVal.textContent = fs+' Hz';
+    regimeLabel.textContent = r==='above' ? 'above Nyquist' : (r==='at' ? 'at Nyquist' : 'below Nyquist (aliased)');
+    buttons.forEach(function(b){ b.classList.toggle('on', parseInt(b.dataset.fs,10)===fs); });
+    expectedText.textContent = expectedFor(fs);
+    observedText.textContent = observedFor(res);
+    rmseVal.textContent = res.rmse.toFixed(4);
+
+    drawPlot(cvTime, {
+      xDomain:[0, T_WIN], yDomain:[-1.8,1.8], hzero:true,
+      xTickFormat: function(v){ return (v*1000).toFixed(0)+'ms'; },
+      series:[
+        { x: res.denseT, y: res.refY, color:'#5FD8CE', type:'line', width:1.6 },
+        { x: res.visT, y: res.visY, color:'#F2A65A', type:'stems' }
+      ]
+    });
+
+    drawPlot(cvRecon, {
+      xDomain:[0, T_WIN], yDomain:[-1.8,1.8], hzero:true,
+      xTickFormat: function(v){ return (v*1000).toFixed(0)+'ms'; },
+      series:[
+        { x: res.denseT, y: res.refY, color:'#5FD8CE', type:'line', width:1.3 },
+        { x: res.denseT, y: res.reconY, color:'#C58CF2', type:'line', width:1.8 }
+      ]
+    });
+
+    drawPlot(cvSpec, {
+      xDomain:[0,260], yDomain:[0,1.15], hzero:false,
+      xTickFormat: function(v){ return v.toFixed(0); },
+      vlines:[
+        { x:F1, color:'rgba(220,227,234,0.55)', label:'f\u2081' },
+        { x:F2, color:'rgba(220,227,234,0.55)', label:'f\u2082' },
+        { x:res.fMax, color:'#F26D6D', dash:[2,2], label:'fs/2' }
+      ],
+      series:[ { x: res.freqs, y: res.mags, color:'#F2A65A', type:'line', width:1.7 } ]
+    });
+
+    drawPlot(cvErr, {
+      xDomain:[0, T_WIN], yDomain:[-1.6,1.6], hzero:true,
+      xTickFormat: function(v){ return (v*1000).toFixed(0)+'ms'; },
+      series:[ { x: res.denseT, y: res.errY, color:'#F26D6D', type:'area' } ]
+    });
+
+    calcBox.textContent =
+      calcLine('f\u2081', F1, fs, res.a1) + '\n\n' + calcLine('f\u2082', F2, fs, res.a2);
+  }
+
+  buttons.forEach(function(b){
+    b.addEventListener('click', function(){ render(parseInt(b.dataset.fs,10)); });
+  });
+  fsSlider.addEventListener('input', function(){ render(parseInt(fsSlider.value,10)); });
+  window.addEventListener('resize', function(){ render(parseInt(fsSlider.value,10)); });
+
+  render(500);
+})();
+</script>
+</body>
+</html>
